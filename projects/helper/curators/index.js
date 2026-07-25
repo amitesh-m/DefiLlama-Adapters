@@ -7,6 +7,7 @@ const { getProvider, getConnection, } = require('../solana')
 const kvaultIdl = require('../../gauntlet/kvault-idl.json')
 const { Program, BN } = require("@project-serum/anchor")
 const { PublicKey } = require("@solana/web3.js")
+const { callSoroban } = require('../chain/stellar')
 
 
 async function kaminoLendVaultTvl(api, { adminAddress, vaults, blacklistedVaults = [] }) {
@@ -289,10 +290,14 @@ async function getCuratorTvlErc4626(api, vaults) {
 
   // Track which v1 vaults are found via v2 adapters (to avoid double-counting)
   const v1VaultsFromV2 = new Set()
-  for (const v1Address of v1VaultAddresses) {
-    if (v1Address && vaultMap.has(v1Address.toLowerCase())) {
-      v1VaultsFromV2.add(v1Address.toLowerCase())
-    }
+  for (let i = 0; i < v1VaultAddresses.length; i++) {
+    const v1Address = v1VaultAddresses[i]
+    if (!v1Address) continue
+    const v1InList = vaultMap.get(v1Address.toLowerCase())
+    if (!v1InList) continue
+    // make sure the same asset here
+    if (v1InList.asset.toLowerCase() !== v2Vaults[i].asset.toLowerCase()) continue
+    v1VaultsFromV2.add(v1Address.toLowerCase())
   }
 
   // Process non-Morpho vaults, but skip v1 vaults that will be handled via v2 de-duplication
@@ -316,8 +321,9 @@ async function getCuratorTvlErc4626(api, vaults) {
     }
 
     const v1InList = vaultMap.get(v1Address.toLowerCase())
-    if (v1InList) {
-      // v1 is in the curator's vault list, use its data for dedup
+    const assetsMatch = v1InList && v1InList.asset.toLowerCase() === v2.asset.toLowerCase()
+    if (assetsMatch) {
+      // v1 is in the curator's vault list and shares v2's asset — safe to dedup
       const v1 = {
         vault: v1Address,
         asset: v1InList.asset,
@@ -325,7 +331,8 @@ async function getCuratorTvlErc4626(api, vaults) {
       }
       morphoPairs.push({ v1, v2, depositor: v1Depositors[i] })
     } else {
-      // v1 is not owned by this curator, just count v2 normally
+      // Either v1 isn't curated by us, or the resolved "v1" isn't a real Morpho V1 of this v2
+      // (asset mismatch). Either way, count v2 standalone.
       api.add(v2.asset, v2.totalAssets)
     }
   }
@@ -376,6 +383,31 @@ async function getCuratorTvlErc4626(api, vaults) {
     // Count V1 totalAssets only ONCE regardless of how many V2 vaults wrap it
     const uniqueTvl = v1.totalAssets + totalV2Assets - totalV2DepositsInV1
     api.add(v1.asset, uniqueTvl)
+  }
+}
+
+async function getCuratorTvlAccountableVault(api, vaults) {
+  if (!vaults || vaults.length === 0) return
+
+  const assets = await api.multiCall({ abi: ABI.ERC4626.asset, calls: vaults, permitFailure: true })
+  const supplies = await api.multiCall({ abi: ABI.totalSupply, calls: vaults, permitFailure: true })
+  const balances = await api.multiCall({ abi: ABI.ERC4626.convertToAssets, calls: vaults.map((vault, i) => ({ target: vault, params: [supplies[i] || 0] })), permitFailure: true })
+  for (let i = 0; i < vaults.length; i++) {
+    if (!assets[i] || !balances[i]) continue
+    api.add(assets[i], balances[i])
+  }
+}
+
+async function getCuratorTvlMidasToken(api, vaults) {
+  // for plain access-controlled ERC20 share tokens minted 1:1 on deposit and burned on redeem
+  // (e.g. Midas-style tokenized funds like EtherFi's "Liquid Euro"/weEUR).
+  // There's no asset()/rate function - the token's own totalSupply() is the fund's AUM, and its
+  // own market price (already tracked by the coins API) converts it to USD.
+  if (!vaults || vaults.length === 0) return
+  const totalSupplies = await api.multiCall({ abi: ABI.totalSupply, calls: vaults, permitFailure: true })
+  for (let i = 0; i < vaults.length; i++) {
+    if (!totalSupplies[i]) continue
+    api.add(vaults[i], totalSupplies[i])
   }
 }
 
@@ -501,6 +533,19 @@ async function getCuratorTvl(api, vaults) {
     return api.getBalances()
   }
 
+  if (api.chain === 'stellar') {
+    // upshift.io Soroban vaults (OZ FungibleVault): total_assets() returns the
+    // underlying held, query_asset() returns the asset's Soroban contract address.
+    const upshiftVaults = vaults.upshiftStellar ?? []
+    for (const vault of upshiftVaults) {
+      const asset = await callSoroban(vault, 'query_asset')
+      const totalAssets = await callSoroban(vault, 'total_assets')
+      api.add(asset, totalAssets.toString())
+    }
+
+    return api.getBalances()
+  }
+
   const allVaults = {
     morpho: vaults.morpho ? vaults.morpho : [],
     euler: vaults.euler ? vaults.euler : [],
@@ -576,6 +621,17 @@ async function getCuratorTvl(api, vaults) {
     await getNested4626Vaults(api, vaults.nestedVaults)
   }
 
+  // accountable AsyncRedeemVaults - totalAssets() returns idle so use convertToAssets(totalSupply()) instead
+  if (vaults.accountableVaults) {
+    await getCuratorTvlAccountableVault(api, vaults.accountableVaults)
+  }
+
+  // plain ERC20 share tokens whose totalSupply() is the fund's AUM, priced via their own
+  // market price (e.g. EtherFi's "Liquid Euro" weEUR)
+  if (vaults.midasTokens) {
+    await getCuratorTvlMidasToken(api, vaults.midasTokens)
+  }
+
   return api.getBalances()
 }
 
@@ -612,4 +668,5 @@ module.exports = {
   getCuratorExport,
   kaminoLendVaultTvl,
   getMorphoVaults,
+  getCuratorTvlAccountableVault,
 }

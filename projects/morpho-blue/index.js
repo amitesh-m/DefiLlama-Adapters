@@ -12,7 +12,8 @@ const config = {
       "0x8413D2a624A9fA8b6D3eC7b22CF7F62E55D6Bc83",
       ADDRESSES.base.USDC,
       ADDRESSES.optimism.WSTETH,
-      '0x84b78bc998e4b1a63f2cf9ebfe76c55fc96a5a9b'
+      '0x84b78bc998e4b1a63f2cf9ebfe76c55fc96a5a9b',
+      '0x52c66b5e7f8fde20843de900c5c8b4b0f23708a0' // AZND token used to artificially inflate Morpho total deposit metric
     ],
     fromBlock: 18883124,
     blacklistedMarketIds: [
@@ -26,6 +27,12 @@ const config = {
       "0x1cfdc0154ae6b9f1887a8250f2582d55606e1a2008e65108fb83dd50a928593e",
 
       "0x0f9563442d64ab3bd3bcb27058db0b0d4046a4c46f0acd811dacae9551d2b129", // sdeUSD/USDC (91.5% LLTV) bad debt from sdeUSD exploit (Nov 2025)
+      "0x8eaf7b29f02ba8d8c1d7aeb587403dcb16e2e943e4e2f5f94b0963c2386406c9", // PAXG market
+      "0x11db9f2c7bda8c2af6a6a72db18aa5eb9290cb99cf75a3c0abacf1b84b8eaf77", // amphrETH market
+      "0x4b86442549b52826e0fc11770ec5154450cb3c5c14dc751a761d81dcfbe7a7b2", // RLP market
+      "0xbd1ad3b968f5f0552dbd8cf1989a62881407c5cccf9e49fb3657c8731caf0c1f", // deUSD market
+      "0xfd0d72a4f0469598b566b1bc5fe64835f828f90b1fb7d746148c086164cd4cc2", // AZND/USDC market, 0 liquidity and 1 borrower
+      "0x23a7d0ff682b323363fb8ba58327ed87001f6306e09b7fd7413bbe4698e749c8", // msY/USDC market
     ],
   },
   base: {
@@ -34,6 +41,7 @@ const config = {
     fromBlock: 13977148,
     blacklistedMarketIds: [
       '0xff0f2bd52ca786a4f8149f96622885e880222d8bed12bbbf5950296be8d03f89', // bad debt due to resolv hack
+      '0xe1986e80099257c65dd18091ec7e34752ae2336870a5649f20c450c9c4931fb8', // HERMES market
     ]
   },
   arbitrum: {
@@ -42,6 +50,8 @@ const config = {
     fromBlock: 296446593,
     blacklistedMarketIds: [
       "0xfdb8221edcae73f73485d55c30e706906114bc2ff4634870c5c57e8fb83eae6a", // K/USDC bad debt from Kinto exploit
+      "0x9e90aec7d768403dacc9dd0d8320307fda3f980eed4df43e3e52168a1c667709", // xUSD market
+      "0xc7670063349ac19dfa324ead7bd7da2985ae931e1b09fb0e31b62c6486b730bd", // RLP market
     ],
   },
   fraxtal: {
@@ -68,6 +78,9 @@ const config = {
   wc: {
     morphoBlue: "0xE741BC7c34758b4caE05062794E8Ae24978AF432",
     fromBlock: 9025669,
+    blacklistedMarketIds: [
+      "0x5a96ea60ddb8ece11b0dd1176f05bbc44ec92197ba206adb086db559146cc964", // sdeUSD market
+    ],
   },
   mode: {
     morphoBlue: "0xd85cE6BD68487E0AaFb0858FDE1Cd18c76840564",
@@ -163,6 +176,7 @@ const config = {
   },
   monad: {
     morphoBlue: "0xD5D960E8C380B724a48AC59E2DfF1b2CB4a1eAee",
+    blackList: ['0x4917a5ec9fcb5e10f47cbb197abe6ab63be81fe8'], // AZND token used to artificially inflate Morpho total deposit metric
     fromBlock: 31907457,
   },
   stable: {
@@ -192,7 +206,32 @@ const config = {
   klaytn: {
     morphoBlue: "0xa8beebdca34d83c697c302a0594f3c41f3994cd2",
     fromBlock: 208021118,
+  },/* still in private mainnet
+  arc: {
+    morphoBlue: "0x34CD04070dD72b14E241112F6d83812Df5Af7fCD",
+    fromBlock: 1,
   },
+  */
+  "0g": {
+    morphoBlue: "0x9CDD13a2212D94C4f12190cA30783B743E83C89e",
+    fromBlock: 7526486,
+  },
+  robinhood: {
+    morphoBlue: '0x9D53d5E3bd5E8d4Cbfa6DB1ca238AEA02E651010',
+    fromBlock: 286,
+  },
+  megaeth: {
+    morphoBlue: '0x18120312A7cf44DcfEc6dCe5632a431579ED9100',
+    fromBlock: 18930057,
+  },
+  xdc: {
+    morphoBlue: "0xEa49B0fE898aF913A3826F9f462eE2cDcb854fD9",
+    fromBlock: 101757515,
+  },
+  pharos: {
+    morphoBlue: "0x18573fA18fd17dDfD790B4a5B5b2977aad3b4Efb",
+    fromBlock: 4202147,
+  }
 }
 
 const eventAbis = {
@@ -243,7 +282,13 @@ const ethenaBlacklist = {
     vaults: [
       '0xBeEFC1CDAfc5b4a649b54D07AFc6bF0f75C6F4E2',   // USDtB vault
     ],
-  }
+  },
+  robinhood: {
+    wallets: ['0x2Bf5d9a2326Ad3C5Ef8208F91Af79C3ca1F0F67c'],
+    vaults: [
+      '0xbEeFF0fb1Dc19344A87b8479dAb60A2e16160737',   // USDG vault
+    ],
+  },
 }
 
 const tvl = async (api) => {
@@ -254,7 +299,7 @@ const tvl = async (api) => {
     getAllVaults: true,
     onlyUseExistingCache: api.chain === 'sei'
   })
-  const vaultAssets = await api.multiCall({  abi: 'address:asset', calls: morphoVaults, permitFailure: true})
+  const vaultAssets = await api.multiCall({ abi: 'address:asset', calls: morphoVaults, permitFailure: true })
 
   const vaultTaO = vaultAssets.map((asset, i) => ([asset, morphoVaults[i]]).filter(i => i[0]))
   await sumTokens2({ api, tokensAndOwners: vaultTaO, blacklistedTokens: blackList, permitFailure: true })

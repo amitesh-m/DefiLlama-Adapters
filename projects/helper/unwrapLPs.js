@@ -10,7 +10,7 @@ const { isLP, log, sliceIntoChunks, isICHIVaultToken, createIncrementArray, slee
 const { sumArtBlocks, whitelistedNFTs, } = require('./nft')
 const uniV3ABI = require('./abis/uniV3.json');
 const slipstreamNftABI = require('../arcadia-finance-v2/slipstreamNftABI.json');
-const { covalentGetTokens, } = require("./token");
+const { covalentGetTokens, blockscoutGetTokens, } = require("./token");
 const SOLIDLY_VE_NFT_ABI = require('./abis/solidlyVeNft.json');
 const { tickToPrice } = require('./utils/tick');
 const { queryAllium } = require('./allium');
@@ -326,6 +326,7 @@ async function unwrapUniswapV3NFTs({ balances = {}, nftsAndOwners = [], api, own
         case 'flare': nftAddress = '0xD9770b1C7A6ccd33C75b5bcB1c0078f46bE46657'; break;
         case 'hyperliquid': nftAddress = '0x6eDA206207c09e5428F281761DdC0D300851fBC8'; break;
         case 'unichain': nftAddress = '0x943e6e07a7E8E791dAFC44083e54041D743C46E9'; break;
+        case 'stable': nftAddress = '0x3BdC3437405f7D801b6036532713fc1F179136a6'; break; // stableswap
         default: throw new Error('missing default uniswap nft address chain: ' + chain)
       }
 
@@ -357,6 +358,9 @@ async function unwrapUniswapV3NFT({
   uniV3ExtraConfig = {},
   isAlgebra = false,
 }) {
+  if (!balances) balances = api.getBalances()
+
+
   const chain = api.chain
 
   const blacklistedPools = (uniV3ExtraConfig.blacklistedPools ?? []).map(i => i.toLowerCase())
@@ -534,6 +538,7 @@ async function unwrapSlipstreamV3NFTs({ balances, nftsAndOwners = [], api, owner
     if (!nftAddress)
       switch (chain) {
         case 'base': nftAddress = '0xe1f8cd9AC4e4A65F54f38a5CdAfCA44f6dD68b53'; break;
+        case 'optimism': nftAddress = '0xf7f8ccce99Ca2896eC75D3A399D152dB96808399'; break;
         default: throw new Error('missing default slipstream v3 nft address chain: ' + chain)
       }
 
@@ -960,8 +965,10 @@ async function sumTokens2({
   resolveVlCVX = false,
   permitFailure = false,
   fetchCoValentTokens = false,
+  fetchBlockscoutTokens = false,
   tokenConfig = {
     // onlyWhitelisted
+    // onlyUseExistingCache
   },
   sumChunkSize = undefined,
   uniV3ExtraConfig = {
@@ -1044,6 +1051,11 @@ group by
   if (fetchCoValentTokens && useCurrentBalances) {
     const cTokens = (await Promise.all(owners.map(i => covalentGetTokens(i, api, tokenConfig))))
     cTokens.forEach((tokens, i) => ownerTokens.push([tokens, owners[i]]))
+  }
+
+  if (fetchBlockscoutTokens) {
+    const bTokens = await Promise.all(owners.map(i => blockscoutGetTokens(i, api, tokenConfig)))
+    bTokens.forEach((tokens, i) => ownerTokens.push([tokens, owners[i]]))
   }
 
   if (resolveNFTs) {
